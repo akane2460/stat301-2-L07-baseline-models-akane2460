@@ -1,0 +1,11 @@
+Name / Data Type / Measurement Unit / Description
+-----------------------------
+type / nominal / -- / M, F, and I (infant)
+longest_shell / continuous / mm / Longest shell measurement
+diameter / continuous / mm / perpendicular to length
+height / continuous / mm / with meat in shell
+whole_weight / continuous / grams / whole abalone
+shucked_weight / continuous / grams / weight of meat
+viscera_weight / continuous / grams / gut weight (after bleeding)
+shell_weight / continuous / grams / after being dried
+rings / integer / -- / +1.5 gives the age in years
