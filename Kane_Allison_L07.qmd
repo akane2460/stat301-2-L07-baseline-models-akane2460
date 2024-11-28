@@ -1,0 +1,582 @@
+---
+title: "L07 Baseline Models"
+subtitle: "Data Science 2 with R (STAT 301-2)"
+author: "Allison Kane"
+date: today
+
+format:
+  html:
+    toc: true
+    toc-depth: 4
+    embed-resources: true
+    code-fold: show
+    link-external-newwindow: true
+    
+execute:
+  warning: false
+  
+from: markdown+emoji
+
+reference-location: margin
+citation-location: margin
+---
+
+::: {.callout-tip icon="false"}
+## Github Repo Link
+
+[Allison Repo](https://github.com/stat301-2-2024-winter/L07-baseline-models-akane2460)
+:::
+
+## Overview
+
+The goal of this lab is to introduce the concept of baseline models and their role in helping us determine if taking the time to build a detailed predictive model is worth while. Baseline models can also play an important role in setting benchmarks.  
+
+## Exercises
+
+We will be re-visiting the abalone (Exercise 1) and titanic (Exercise 2) datasets used in Lab 04 Judging Models. 
+
+For each exercise we have completed the initial setup, data preprocessing/recipes, defining workflows, and implementation of model tuning for various candidate model types. The details of which are provided in each exercise. While the R scripts are also included, they are placeholders. The majority of the code has been removed from them, but enough details have been provided in this document and in the scripts such that the missing code could be re-created.
+
+The main objective is to define and train baseline models to appropriately compare to the results of the other models.
+
+### Exercise 1
+
+For this exercise, we will be working with the abalone dataset^[UCI Machine Learning repository ([see website](http://archive.ics.uci.edu/ml/datasets/Abalone))]. The dataset consists of 4,177 observations of abalone in Tasmania. 
+
+::: {.callout-note icon="false"}
+## Prediction goal
+
+Our goal is to predict abalone age, which is calculated as the number of rings plus 1.5. 
+:::
+
+#### Task 1
+
+::: {.callout-important collapse="true" icon="false"}
+
+## Details for initial setup, model/workflow specs, & preprocessing
+
+When reading in the data we created the target variable `age` by adding 1.5 to the number of rings for each observation. We also change the variable `type` to a factor. After determining there were no issues with the target variable and there were no missingness issues with predictor variables, we proceeded to splitting the data and constructing resamples.
+
+We implemented an 80-20 training-test split using stratified sampling (stratified by target variable with 4 strata). The resamples were constructed by taking the training dataset and applying repeated V-fold cross-validation (10 folds, 5 repeats) with stratification on the target variable with 4 strata.
+
+The following model types were specified with a plan for tuning hyperparameters using a regular grid:
+
+- Linear model (`lm` engine)
+- Elastic net model (`glmnet` engine)
+    - Mixture was explored over $[0,1]$ range with 11 levels
+    - Penalty was explored over $[-3,0]$ range with 11 levels (on log-10 scale)
+- K-nearest neighbors model (`kknn` engine)
+    - Neighbors was explored over $[1,25]$ with 7 levels
+- Random forest (`ranger` engine)
+    - Number of trees set to 1,000
+    - Number of randomly selected predictors to split on was explored over $[1,6]$ with 6 levels
+    - Minimum number of data points in a node for splitting was explored over $[2,40]$ with 5 levels
+- Boosted tree (`xgboost` engine)
+    - Number of trees was explored over $[100, 1000]$ with 4 levels
+    - Number of randomly selected predictors to split on was explored over $[1,6]$ with 6 levels
+    - Minimum number of data points in a node for splitting was explored over $[2,40]$ with 4 levels
+    - Learning rate was explored over $[-5,-0.2]$ with 4 levels (on log-10 scale)
+    
+The preprocessing/feature engineering for these models can be observed in the `2_recipes_ex1.R` script. Reviewing will help to fully understand the preprocessing steps used.
+
+The linear and elastic net models used the preprocessing stored in `abalone_recipe_lm`. We take care to remove appropriate variables (`rings` and variables with zero variance), dummy code any factor variables, add complexity by including some interactions, and standardize all numerical variables.
+
+The k-nearest neighbors, random forest, and boosted tree models used the preprocessing stored in `abalone_recipe_tree`. We take care to remove appropriate variables (`rings` and any variables with zero variance), one-hot encode factor variables, and standardize all numerical variables.
+
+Before any training of models occurs we decided the RMSE would be the metric by which we would compare models.
+
+:::
+
+##### Part A
+
+On each fold, about how much data is used for training the model and about how much is used to produce an assessment estimate? How many assessment estimates are being averaged to produce one estimate per model? 
+
+::: {.callout-tip icon="false"}
+## Solution
+
+On each fold, there 4/5 of the data is used to train the model (in this case 3340), while 1/5 (the remaining) is used to assess the model (837).
+
+To produce one estimate per model, 50 assessment estimates would be averaged.
+
+:::
+
+##### Part B
+
+It is always useful to have a sense of how many models where included in the model comparison stage --- especially when considering computational resources. Having it broken down by type lets us know which model types were considered and the number of submodels hint at how thorough each model type was explored. Fill in the missing values in @tbl-mod-totals-reg.
+
+
+| Model Type          | Number of models | Total number of trainings^[Number of times a training process must be completed] |
+|---------------------|-----------------:|--------------------------:|
+| Linear model        |        1         |              50           |
+| Elastic net         |      121         |            6050           |
+| K-nearest neighbors |        7         |             350           |
+| Random forest       |       30         |            1500           |
+| Boosted tree        |      384         |            1920           |
+| **Total**           |      543         |            9870           |
+
+: Model Training Totals for Regression Problem {#tbl-mod-totals-reg .striped .hover}
+
+##### Part C
+
+Suppose each linear, elastic net, and nearest neighbor model takes 2 seconds to fit, while each random forest and boosted tree model takes 6 seconds. About how many minutes^[Report in additional unit(s) of time, if it would be more useful/impactful.] would it take to train all the models given the breakdown in @tbl-mod-totals-reg --- assuming we fit one model after the other (meaning fit sequentially)? 
+
+::: {.callout-tip icon="false"}
+## Solution
+
+It would take approximately 33,420 seconds or 557 minutes or 9.28 hours. 
+
+
+:::
+
+Instead of assuming we fit models sequentially, assume we have 10 cores (independent processors) that we can fit models on simultaneously. How many minutes would it take?
+
+::: {.callout-tip icon="false"}
+## Solution
+
+55.7 minutes (or 3,342 seconds, or .928 hours). 
+
+:::
+
+:::{.callout-note}
+The time it takes to fit each model is hypothetical and does not reflect how long it really took to complete this process.
+:::
+
+#### Task 2
+
+We've done a good deal of work fitting many models with various degrees of complexity and computational costs, but we never asked if it was needed and/or worth while for the stated prediction problem. We just assumed it would be. 
+
+Enter baseline models. They are benchmark/reference models that help us frame whether building increasingly complex models would be worth the effort and/or expense.
+
+::: {.callout-caution collapse="true" icon="false"}
+## Basic baseline recipe/preprocessing 
+
+While it might seem strange, the null model requires a preprocessing step. In this case we will simply use the recipe/preprocessing we plan to use for the other baseline model (a very simple linear model).
+
+For regression problems, linear models with very little preprocessing/feature engineering are good baseline models. They are easy to quickly define, they fit and scale quickly, and their performance is okay. They are also easier to unpack and build from. 
+
+In `2_recipes_ex1.R`, define a new recipe (suggested name `abalone_recipe_baseline`) that starts by using all other variables to predict `age` and includes the following steps:
+
+- Remove `rings`
+- Dummy encode all factors
+- Remove all variables with zero variance
+- Scale and center all numerical variables
+
+:::
+
+For our purposes we are interested in 2 baseline models: 
+
+1. the null model and 
+2. a very simple linear model. 
+
+These baseline models should fit very quickly, so place both in one script: `3_fit_baseline_ex1.R`. The process for producing results for baseline models follows the familiar tidymodeling steps:
+
+1. Define recipe/preprocessing
+2. Define model specification 
+    - use `null_model()` with `parsnip` engine
+    - use `linear_reg()` with `lm` engine
+3. Define workflow
+4. Use resamples to train/assess workflow^[Same resamples that all candidate workflows/models should use. Allows for valid comparisons.]
+
+When building these baseline models in `3_fit_baseline_ex1.R`, suggest using `null_` and `baseline_` prefixes.
+
+When saving out results of this process, take care to ensure the workflow is included (no need to keep predicted values). This can aid in using built-in analysis tools and ensures we can extract the workflow from the saved results object.
+
+Provide display code for the baseline recipe and the 2 model specification. No need to show anything else --- don't show anything else. Later tasks will provide indications of whether everything was correctly coded. 
+
+::: {.callout-tip icon="false"}
+## Solution
+
+```{r}
+#| label: ex 1 task 2
+#| eval: false
+
+# build baseline recipe ----
+abalone_recipe_baseline <- recipe(age ~ ., data = abalone_train) |> 
+  step_rm(rings) |> 
+  step_dummy(all_nominal()) |> 
+  step_zv(all_predictors()) |> 
+  step_scale(all_numeric_predictors()) |> 
+  step_center(all_numeric_predictors())
+
+# check recipe
+# abalone_recipe_baseline |> 
+#   prep() |> 
+#   bake(new_data = NULL) |> 
+#   glimpse()
+
+# simple linear  model fit----
+# model specifications ----
+baseline_lm_spec <- 
+  linear_reg() |> 
+  set_engine("lm") |> 
+  set_mode("regression") 
+
+# define workflows ----
+baseline_lm_wflow <-
+  workflow() |> 
+  add_model(lm_spec) |> 
+  add_recipe(abalone_recipe_baseline)
+
+# fit workflows/models ----
+baseline_fit_lm <- lm_wflow |> 
+  fit_resamples(
+    resamples = abalone_folds, 
+    control = control_resamples(save_workflow = TRUE)
+  )
+
+# fit workflows/models ----
+baseline_fit_lm <- fit_resamples(lm_wflow, abalone_folds)
+
+# null model fit----
+null_spec <- null_model() |> 
+  set_engine("parsnip") |> 
+  set_mode("regression")
+
+# define workflows ----
+null_workflow <- workflow() |> 
+  add_model(null_spec) |> 
+  add_recipe(abalone_recipe_baseline)
+
+# fit workflows/models ----
+null_fit <- null_workflow |> 
+  fit_resamples(
+    resamples = abalone_folds, 
+    control = control_resamples(save_workflow = TRUE)
+  )
+
+```
+
+:::
+
+#### Task 3
+
+Provide a table that displays the best estimated RMSE and standard error for the each model type --- includes baseline models defined in Task 2.
+
+The table information could also be displayed as graph, but is not required.
+
+::: {.callout-tip icon="false"}
+## Solution
+
+|wflow_id     |model            |.metric |     mean|   std_err|
+|:------------|:----------------|:-------|--------:|---------:|
+|baseline     |linear_reg       |rmse    | 2.203972| 0.0197700|
+|boosted_tree |boost_tree       |rmse    | 2.104350| 0.0166380|
+|en           |linear_reg       |rmse    | 2.148164| 0.0164758|
+|knn          |nearest_neighbor |rmse    | 2.179235| 0.0166941|
+|lm           |linear_reg       |rmse    | 2.147673| 0.0163880|
+|null         |null_model       |rmse    | 3.177277| 0.0196320|
+|rf           |rand_forest      |rmse    | 2.100739| 0.0177039|
+:::
+
+Does the table indicate that building more complex models appears to be worth while or not? Explain --- should include the use of both baseline models to explain how you made your decision.
+
+::: {.callout-tip icon="false"}
+## Solution
+
+Given the best estimated RMSE values, it seems that building more complex models would be worthwhile in this case. The rf model seems to have the best performance, based on its mean RMSE of 2.1007. Both the baseline models in this case are much higher in their mean RMSE calculation (null 3.18 and baseline 2.20), well above every other complex model's RMSE.
+
+:::
+
+Which model was the best? This may or may not include identification of the best set of hyperparameters. 
+
+::: {.callout-tip icon="false"}
+## Solution
+
+The best model (non-baseline/null) was the random forest. Its best set of hyperparameters are mtry = 5 and min_n = 30.
+
+:::
+
+#### Task 4
+
+Train the best model on the entire training dataset. Assess the model's performance on the test set using RMSE, MAE, MAPE, and $R^2$. Provide an interpretation for each.
+
+::: {.callout-tip icon="false"}
+## Solution
+
+|.metric |.estimator |  .estimate|
+|:-------|:----------|----------:|
+|rmse    |standard   |  2.2372359|
+|rsq     |standard   |  0.5672959|
+|mae     |standard   |  1.5196987|
+|mape    |standard   | 12.5469728|
+
+The random forest model has a RMSE value of approximately 2.237, indicating that on average its predictions are off from the true value of an abalone's age by about 2.237 years. Given its $R^2$ value of approximately .567, therefore seeing 56.7% of the variance in the abalone's age explained by our model. The MAE value of approximately 1.52 indicates that the model's predictions are off from the true age of an abalone by 1.52 years. The MAPE value indicates that the predictions for an abalone's age deviate from 12.55% its true values for age. 
+
+:::
+
+As part of the final model assessment process, visualize your results by plotting the predicted observations by the observed observations --- see Figure 9.2 in Tidy Modeling with R.
+
+::: {.callout-tip icon="false"}
+## Solution
+
+![Visualizing predicted by actual observations](exercise_1/results/predicted_vs_age_plot.png)
+
+
+:::
+
+### Exercise 2
+
+For this exercise, we will be working with the titanic dataset^[[Kaggle data set](https://www.kaggle.com/c/titanic/overview)]. The dataset contains the a list of 891 passengers that were on the Titanic. 
+
+::: {.callout-note icon="false"}
+## Prediction goal
+
+The goal is classification; specifically, to predict which passengers would survive the [Titanic shipwreck](https://en.wikipedia.org/wiki/Titanic).
+:::
+
+#### Task 1
+
+::: {.callout-important collapse="true" icon="false"}
+
+## Details for initial setup, model/workflow specs, & preprocessing
+
+When reading in the data we re-typed the `survived` (`"Yes"` was set as its first level/class), `pclass`, and `sex` variables as factors. Analysis of the target variable suggest there where no major issues. There was some mild class imbalance that suggested we should use stratificaion when splitting the data and when forming resamples. We noted there were missingness issues with `cabin`, `age`, and `embarked` that would beed to be addressed during preprocessing. Next, we moved on to splitting the data and constructing resamples.
+
+We implemented an 85-15 training-test split using stratified sampling (stratified by target variable with 4 strata). The resamples were constructed by taking the training dataset and applying repeated V-fold cross-validation (8 folds, 6 repeats) with stratification on the target variable with 4 strata.
+
+The following model types were specified with a plan for tuning hyperparameters using a regular grid:
+
+- logistic regression model (`glm` engine)
+- Elastic net model (`glmnet` engine)
+    - Mixture was explored over $[0,1]$ range with 21 levels
+    - Penalty was explored over $[-3,0]$ range with 21 levels (on log-10 scale)
+- K-nearest neighbors model (`kknn` engine)
+    - Neighbors was explored over $[1,25]$ with 7 levels
+- Random forest (`ranger` engine)
+    - Number of trees was explored over $[500, 2000]$ with 4 levels
+    - Number of randomly selected predictors to split on was explored over $[1,5]$ with 5 levels
+    - Minimum number of data points in a node for splitting was explored over $[2,40]$ with 4 levels
+- Boosted tree (`xgboost` engine)
+    - Number of trees was explored over $[100, 2000]$ with 6 levels
+    - Number of randomly selected predictors to split on was explored over $[1,5]$ with 5 levels
+    - Minimum number of data points in a node for splitting was explored over $[2,40]$ with 4 levels
+    - Learning rate was explored over $[-5,-0.2]$ with 10 levels (on log-10 scale)
+    
+The preprocessing/feature engineering for these models can be observed in the `2_recipes_ex2.R` script. Reviewing will help to fully understand the preprocessing steps used.
+
+The logistic and elastic net models used the preprocessing stored in `titanic_recipe_lm`. We take care to remove unneeded variables (`passenger_id`, `name`, `cabin`, `embarked`, `ticket` and variables with zero variance), use linear model to impute missing values for `age`, dummy code predictor variables that are factors, add complexity by including some interactions, and standardize all numerical variables.
+
+The k-nearest neighbors, random forest, and boosted tree models used the preprocessing stored in `titanic_recipe_tree`. We take care to remove unneeded variables (`passenger_id`, `name`, `cabin`, `embarked`, `ticket` and variables with zero variance), use linear model to impute missing values for `age`, one-hot encode predictor variables that are factors, and standardize all numerical variables.
+
+Before any training of models occurs we decided the accuracy would be the metric by which we would compare models.
+
+:::
+
+##### Part A
+
+On each fold, about how much data is used for training the model and about how much is used to produce an assessment estimate? How many assessment estimates are being averaged to produce one estimate per model? 
+
+::: {.callout-tip icon="false"}
+## Solution
+
+On each fold, there 17/20 of the data is used to train the model (756 passengers in this case), while 3/20 (the remaining) is used to assess the model (135 passengers in this case). 
+
+To produce one estimate per model, 48 assessment estimates would be averaged.
+
+:::
+
+##### Part B
+
+It is always useful to have a sense of how many models where included in the model comparison stage --- especially when considering computational resources. Having it broken down by type lets us know which model types were considered and the number of submodels hint at how thorough each model type was explored. Fill in the missing values in @tbl-mod-totals-class.
+
+| Model Type          | Number of models | Total number of trainings^[Number of times a training process must be completed] |
+|---------------------|-----------------:|--------------------------:|
+| Logistic model      |           1      |              48           |
+| Elastic net         |         441      |            21168          |
+| K-nearest neighbors |         560      |            26880          |
+| Random forest       |          80      |             3840          |
+| Boosted tree        |        1200      |            57600          |
+| **Total**           |        2282      |           109536          |
+
+: Model Training Totals for Classification Problem {#tbl-mod-totals-class .striped .hover}
+
+
+##### Part C
+
+Suppose each logistic, elastic net, and nearest neighbor model takes 1 second to fit, while each random forest and boosted tree model takes 4 seconds. About how many minutes^[Report in additional unit(s) of time, if it would be more useful/impactful.] would it take to train all the models given the breakdown in @tbl-mod-totals-class --- assuming we fit one model after the other (meaning fit sequentially)? 
+
+::: {.callout-tip icon="false"}
+## Solution
+
+4897.6 minutes or 81.6 hours or 3.4 days.
+
+:::
+
+Instead of assuming we fit models sequentially, assume we have 10 cores (independent processors) that we can fit models on simultaneously. How many minutes would it take?
+
+::: {.callout-tip icon="false"}
+## Solution
+
+489.76 minutes or 8.16 hours.
+
+:::
+
+:::{.callout-note}
+The time it takes to fit each model is hypothetical and does not reflect how long it really took to complete this process.
+:::
+
+#### Task 2
+
+Similarly to Exercise 1 Task 2, we want know if building increasingly complex models was worth the effort and/or expense. To explore this we will use 2 baseline models:
+
+1. the null model and 
+2. a naive Bayes model (common baseline model for binary classification). 
+
+::: {.callout-caution collapse="true" icon="false"}
+## Basic baseline recipe/preprocessing 
+
+Use the preprocessing/recipe for the tree models as the preprocessing/recipe for the null model. We won't be able to use the naive Bayes preprocessing/recipe due to specific requirement needed for naive Bayes. 
+
+In `2_recipes_ex2.R`, define the naive Bayes recipe (suggested name `titanic_recipe_naive_bayes`) by using all other variables to predict `survived` and includes the following steps:
+
+- Remove `passenger_id`, `name`, `cabin`, `embarked`, and `ticket`
+- Remove all variables with zero variance
+- Use a linear model to impute missing values for `age`
+- Scale and center all numerical variables
+
+:::
+
+These baseline models should fit very quickly, so place both in one script: `3_fit_baseline_ex2.R`. The process for producing results for baseline models follows the familiar tidymodeling steps:
+
+1. Define recipe/preprocessing
+2. Define model specification 
+    - use `null_model()` with `parsnip` engine
+    - use `naive_Bayes()` with `klaR` engine (note you will need the `discrim` package loaded)
+3. Define workflow
+4. Use resamples to train/assess workflow^[Same resamples that all candidate workflows/models should use. Allows for valid comparisons.]
+
+When building these baseline models in `3_fit_baseline_ex2.R`, suggest using `null_` and `nbayes_` prefixes.
+
+When saving out results of this process, take care to ensure the workflow is included (no need to keep predicted values). This can aid in using built-in analysis tools and ensures we can extract the workflow from the saved results object.
+
+Provide display code for the baseline recipe and the 2 model specification. No need to show anything else --- don't show anything else. Later tasks will provide indications of whether everything was correctly coded. 
+
+::: {.callout-tip icon="false"}
+## Solution
+
+```{r}
+#| label: ex 2 task 2
+#| eval: false
+
+titanic_recipe_baseline <- recipe(survived ~ ., data = titanic_train) |> 
+  step_rm(passenger_id, name, cabin, embarked, ticket) |> 
+  step_zv(all_predictors()) |> 
+  step_impute_linear(age) |> 
+  step_dummy(all_nominal_predictors(), one_hot = TRUE) |> 
+  step_center(all_numeric_predictors())
+
+# check recipe
+# abalone_recipe_baseline |>
+#   prep() |>
+#   bake(new_data = NULL) |>
+#   glimpse()
+
+null_spec <- null_model() |> 
+  set_engine("parsnip") |> 
+  set_mode("classification")
+
+# define workflows ----
+null_workflow <- workflow() |> 
+  add_model(null_spec) |> 
+  add_recipe(titanic_recipe_baseline)
+
+# fit workflows/models ----
+null_fit <- null_workflow |> 
+  fit_resamples(
+    resamples = titanic_folds, 
+    control = control_resamples(save_workflow = TRUE)
+  )
+
+baseline_lm_spec <- naive_Bayes() |> 
+  set_engine("klaR") |> 
+  set_mode("classification") 
+
+# define workflows ----
+baseline_lm_wflow <- workflow() |> 
+  add_model(baseline_lm_spec) |> 
+  add_recipe(titanic_recipe_baseline)
+
+# fit workflows/models ----
+baseline_fit_lm <- baseline_lm_wflow |> 
+  fit_resamples(
+    resamples = titanic_folds, 
+    control = control_resamples(save_workflow = TRUE)
+  )
+
+```
+
+
+:::
+
+#### Task 3
+
+Provide a table that displays the best estimated accuracy and standard error for the each model type --- includes baseline models defined in Task 2.
+
+The table information could also be displayed as graph, but is not required.
+
+::: {.callout-tip icon="false"}
+## Solution
+
+|wflow_id     |model            |.metric  |mean accuracy|std_err|
+|:------------|:----------------|:--------|---------:|---------:|
+|baseline     |naive_Bayes      |accuracy | 0.7805205| 0.0066040|
+|boosted_tree |boost_tree       |accuracy | 0.7264055| 0.0060914|
+|en           |logistic_reg     |accuracy | 0.6164118| 0.0001540|
+|knn          |nearest_neighbor |accuracy | 0.7784750| 0.0056523|
+|lm           |logistic_reg     |accuracy | 0.7999409| 0.0062990|
+|null         |null_model       |accuracy | 0.6164118| 0.0001540|
+|rf           |rand_forest      |accuracy | 0.8104730| 0.0063376|
+
+
+
+:::
+
+
+Does the table indicate that building more complex models appears to be worth while or not? Explain --- should include the use of both baseline models to explain how you made your decision.
+
+::: {.callout-tip icon="false"}
+## Solution
+
+This table indicates that in some cases, building more complex models could be worthwhile. In our case here, our simple baseline has a mean accuracy of .78. However, we see that the best performing model (the one with the highest accuracy of .810) is a random forest model.
+
+:::
+
+Which model was the best? This may or may not include identification of the best set of hyperparameters. 
+
+::: {.callout-tip icon="false"}
+## Solution
+
+The random forest model was the best performing model. Its best set of hyperparameters are mtry = 2 and min_n = 2, trees = 1500.
+
+:::
+
+#### Task 4
+
+Train the best model on the entire training dataset. Assess the model's performance using the on the test set using accuracy --- provide an interpretation.
+
+::: {.callout-tip icon="false"}
+## Solution
+
+|.metric  |.estimator | .estimate|
+|:--------|:----------|---------:|
+|accuracy |binary     | 0.8296296|
+
+Given that the accuracy of this rf model is approximately .83, about 83.0% of the passengers' survival status was correctly predicted by the model. 
+
+:::
+
+Basic assessment of classification problems must include a confusion matrix. Produce a confusion matrix. Interpret the numbers in each category/cell. The matrix could be displayed as a heat map as well, but is not required.
+
+::: {.callout-tip icon="false"}
+## Solution
+
+|Prediction |  Truth   |
+|:----------|:-----|:--|
+|           |Yes   |No |
+|Yes        |39    |10 |
+|No         |13    |73 |
+
+In this matrix, it is seen that the model correctly predicted 39 passengers to survive (true positives) and 73 passengers to not (true negatives). It, however incorrectly predicted 10 passengers to survive who did not (false positive) and 13 passengers to not survive who did (false negative).
+
+
+:::
